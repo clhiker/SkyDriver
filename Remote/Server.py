@@ -70,11 +70,19 @@ class Server:
 
     # 上传选项
     # 接受数据线程
-    def uploadFile(self, client):
-        now_path = client.recv(1024).decode()
+    def uploadServer(self, client):
+        up_path = client.recv(1024).decode()
         filename = client.recv(1024).decode()
-        file_path = now_path + os.sep + filename
 
+        up_path = self.transPath(up_path)
+        top_path = os.getcwd()
+        up_path = top_path + os.sep + up_path
+
+        if not os.path.isdir(up_path):
+            os.makedirs(up_path)
+        file_path = up_path + os.sep + filename
+
+        print(file_path)
         while True:
             data = client.recv(1024)
             if not data:
@@ -125,15 +133,19 @@ class Server:
         client.send('connect_ok'.encode())
         delete_dir = client.recv(1024).decode()
         delete_dir = self.now_path + os.sep + delete_dir
-        os.removedirs(delete_dir)
-        print(delete_dir)
+        if os.path.exists(delete_dir):
+            os.removedirs(delete_dir)
+            print(delete_dir)
     # 删除文件
     def deleteFileServer(self, client):
         client.send('connect_ok'.encode())
         delete_file = client.recv(1024).decode()
         delete_file = self.now_path + os.sep + delete_file
-        os.remove(delete_file)
-        print(delete_file)
+        if os.path.exists(delete_file):
+            os.remove(delete_file)
+            print(delete_file)
+        else:
+            print('file is not exits')
     # 发送根目录信息
     def sendRootFileServer(self, client):
         client.send('connect_ok'.encode())
@@ -141,26 +153,40 @@ class Server:
         client.send(self.root_path.encode())
 
     # 下载选项
-    def downloadFileServer(self, client):
-        download_filename = client.recv(1024).decode()
-        file_path = self.now_path + os.sep + download_filename
+    def downloadServer(self, client):
+        download_path = client.recv(1024).decode()
+        download_path = self.transPath(download_path)
 
-        # 发送文件的实际大小
-        client.send(str(os.path.getsize(file_path)).encode())
+        path = self.now_path + os.sep + download_path
+        print(path)
+
+        client.send(str(os.path.getsize(path)).encode())
         time.sleep(0.002)
-
-        with open(file_path, 'rb') as f:
+        with open(path, 'rb') as f:
             for line in f:
                 client.send(line)
-                # cancel = client.recv(1024).decode()
-                # if cancel == 'cancel':
-                #     print(cancel)
-                #     break
         f.close()
+
+    def sendFilesList(self,client):
+        dir = client.recv(1024).decode()
+        up_path = self.now_path + os.sep + dir
+        path_list = os.listdir(up_path)
+
+        client.send(str(len(path_list)).encode())
+
+        for item in path_list:
+            path = up_path + os.sep + item
+            if os.path.isdir(path):
+                client.send('1'.encode())
+                client.send(item.encode())
+            else:
+                client.send('0'.encode())
+                client.send(item.encode())
+
+        pass
 
     # 接收状态选项
     def receiveState(self, client, receive_info):
-        print(receive_info)
         # 检查连接状态
         # 注册
         if receive_info == 'connecting':
@@ -169,11 +195,8 @@ class Server:
         if receive_info == 'check_for_username_and_password':
             self.checkForUsernameAndPassword(client)
         # 上传文件
-        if receive_info == 'begin_to_upload_file':
-            self.uploadFile(client)
-        # 上传文件夹
-        if receive_info == 'begin_to_upload_dir':
-            pass
+        if receive_info == 'upload':
+            self.uploadServer(client)
         # 获取文件路径结构
         if receive_info == 'ask_for_file':
             self.getFilePathStruct(client)
@@ -183,16 +206,19 @@ class Server:
             self.deleteFileServer(client)
         if receive_info == 'root_path':
             self.sendRootFileServer(client)
-        if receive_info == 'download_file':
-            self.downloadFileServer(client)
+        # 下载文件
+        if receive_info == 'download':
+            self.downloadServer(client)
         if receive_info == 'cancel':
             self.deleteFileServer(client)
+        if receive_info == 'get_files_list':
+            self.sendFilesList(client)
+
 
     def beginInterface(self):
         while True:
             client, address = self.server_socket.accept()
             choice = client.recv(1024).decode()
-            print(choice)
             t = threading.Thread(target=self.receiveState, args=(client, choice))
             t.start()
 
@@ -229,7 +255,7 @@ class Server:
             path_list = path.split('/')
             new_path = path_list[0]
             for index in range(1, len(path_list)):
-                new_path = os.sep + path_list[index]
+                new_path += os.sep + path_list[index]
 
         return new_path
 
@@ -237,40 +263,3 @@ if __name__ == '__main__':
     server_start = Server()
     print('begin connecting...')
     server_start.beginInterface()
-
-
-
-    # def uploadServer(self, client):
-    #     #while True:
-    #     path = client.recv(1024).decode()
-    #     filename_index = path.rfind(os.sep)
-    #     filename = path[filename_index, ]
-    #     part_list = filename.split(os.sep)
-    #
-    #     with open(filename, 'ab') as f:
-    #         data = client.recv(1024)
-    #         f.write(data)
-    #     f.close()
-    #
-    # def creatDir(self, path):
-    #     folders = []
-    #     while not os.path.isdir(path) and path != '':
-    #         path, suffix = os.path.split(path)
-    #         folders.append(suffix)
-    #
-    #     for folder in folders[::-1]:
-    #         path = os.path.join(path, folder)
-    #         os.mkdir(path)
-    #
-    #
-
-
-
-    # def uploadServerThreadPool(self, client):
-    #     pool = threadpool.ThreadPool(10)
-    #     requests = threadpool.makeRequests(self.uploadServer, client)
-    #     [pool.putRequest(req) for req in requests]
-    #     pool.wait()
-
-
-

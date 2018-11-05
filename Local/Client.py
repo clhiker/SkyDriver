@@ -76,6 +76,7 @@ class Client:
                 print('连接已建立')
                 self.client_socket.send(up_path.encode())
                 len_of_list = int(self.client_socket.recv(1024).decode())
+                dir_len = len_of_list
 
                 for i in range(len_of_list):
                     file_or_dir = self.client_socket.recv(1024).decode()
@@ -96,55 +97,79 @@ class Client:
 
         self.client_socket.close()
 
+    def getFilesList(self, dir, info_list):
+        message = 'get_files_list'
+        self.client_socket.send(message.encode())
+        time.sleep(0.001)
+        self.client_socket.send(dir.encode())
+        length = self.client_socket.recv(1024).decode()
+        for i in range(int(length)):
+            type = self.client_socket.recv(1024).decode()
+            # 文件
+            if type == '0':
+                # 相对文件名
+                name = self.client_socket.recv(1024).decode()
+                info_list.append(['0',name])
+            else:
+                name = self.client_socket.recv(1024).decode()
+                info_list.append(['1', name])
+
     # 下载文件到指定目录下
-    def downloadFile(self, filename, save_path):
-        message = 'download_file'
+    def download(self, relative_file_path, save_path):
+        message = 'download'
         self.client_socket.send(message.encode())
         time.sleep(0.002)
-        self.client_socket.send(filename.encode())
-        # 文件长度
-        file_size_str = self.client_socket.recv(1024).decode()
-        file_size = int(file_size_str)
-        self.setRemoteFileSize(file_size)
+        print(relative_file_path)
+        self.client_socket.send(relative_file_path.encode())
 
-        old_time = time.time()
         while True:
-            new_time = time.time()
-            # 暂停按钮
-            while self.stop_button:
-                time.sleep(1)
+            # 文件保存路径
+            file_path = save_path + '/' + relative_file_path
+            up_path = file_path[:file_path.rfind('/')]
 
-            # 取消按钮
-            if self.cancel_button:
-                time.sleep(0.1)
-                self.client_socket.send('cancel'.encode())
-                os.remove(save_path)
-                break
+            if not os.path.isdir(up_path):
+                os.makedirs(up_path)
 
-            # 进度统计
-            if new_time - old_time > 0.1:
-                process = round(os.path.getsize(save_path) / file_size * 100)
-                self.setLoadProcess(process)
-                old_time = new_time
+            # 文件大小
+            file_size_str = self.client_socket.recv(1024).decode()
+            file_size = int(file_size_str)
+            self.setRemoteFileSize(file_size)       # 生成可视化文件路径
+            old_time = time.time()
+            while True:
+                new_time = time.time()
+                # 暂停按钮
+                while self.stop_button:
+                    time.sleep(1)
+                # 取消按钮
+                if self.cancel_button:
+                    time.sleep(0.1)
+                    self.client_socket.send('cancel'.encode())
+                    os.remove(file_path)
+                    break
+                # 进度统计
+                if new_time - old_time > 0.1:
+                    process = round(os.path.getsize(file_path) / file_size * 100)
+                    self.setLoadProcess(process)
+                    old_time = new_time
+                # 下载到本地
+                data = self.client_socket.recv(1024)
+                if not data:
+                    break
+                else:
+                    with open(file_path, 'ab') as f:
+                        f.write(data)
 
-            # 下载到本地
-            data = self.client_socket.recv(1024)
-            if not data:
-                break
-            else:
-                with open(save_path, 'ab') as f:
-                    f.write(data)
 
-
-        self.setLoadProcess(100)
-        self.client_socket.close()
+            self.setLoadProcess(100)
+            self.client_socket.close()
+            return
 
 
     # 上传文件到当前的文件夹之下, filename是文件名, file_path是本地的文件路径
-    def upload(self, now_path, filename, file_path):
-        self.client_socket.send('begin_to_upload_file'.encode())
+    def upload(self, up_path, filename, file_path):
+        self.client_socket.send('upload'.encode())
         time.sleep(0.2)
-        self.client_socket.send(now_path.encode())
+        self.client_socket.send(up_path.encode())
         time.sleep(0.2)
         self.client_socket.send(filename.encode())
         time.sleep(0.2)
@@ -233,15 +258,3 @@ class Client:
 
 if __name__ == '__main__':
     pass
-
-
-
-# 远程IP获取方法
-# try:
-#     remote_ip = socket.gethostbyname(host)
-#
-# except socket.gaierror:
-#     # could not resolve
-#     print('Hostname could not be resolved. Exiting')
-#
-# print('Ip address of ' + host + ' is ' + remote_ip)

@@ -12,6 +12,7 @@ import threading
 import Local.UploadUi
 import Local.Upload
 import Local.Client
+import configparser
 
 class DriverUi():
     #构造函数
@@ -26,9 +27,16 @@ class DriverUi():
         # 上传队列
         self.upload_queue = []
         self.upload_frame_list = []
-        
+        # 等待上传队列
+        self.wait_upload_queue = []
+        self.wait_upload_frame_list = []
+        # 下载队列
         self.download_queue = []
         self.download_frame_list = []
+        # 等待下载队列
+        self.wait_download_queue = []
+        self.wait_download_frame_list = []
+
 
         self.dir_len = 0
 
@@ -36,6 +44,11 @@ class DriverUi():
         self.root_path = get_root_path_client.getRootPathClient()
         self.now_path = self.root_path
         self.getImage()
+
+        config = configparser.ConfigParser()
+        config.read('local.ini')
+        self.MAX_LOAD = int(config.get('config', 'max_load_number'))
+
     def getImage(self):
         self.dir_image = PhotoImage(
             file=os.path.dirname(os.getcwd()) + os.sep +'image' + os.sep + 'dir.gif')
@@ -51,15 +64,6 @@ class DriverUi():
     #初始化窗口
     def setWindow(self):
         self.root.title('我的网盘')
-        # ui_width = 1000
-        # ui_height = 500
-        # screen_width = self.root.winfo_screenwidth()
-        # screen_height = self.root.winfo_screenheight()
-        # driver_size = '%dx%d+%d+%d' % (ui_height, ui_height,
-        #                                (screen_width - ui_width) / 2, (screen_height - ui_height) / 2)
-        #
-        # self.root.geometry(driver_size)  # 窗口大小
-        # self.root.resizable(width=False, height=False)  # 宽和高都设置为可变的
         self.root.geometry('800x500')
 
         # 1、4个功能键
@@ -236,7 +240,6 @@ class DriverUi():
         t = threading.Thread(target=self.uploadProcessBar, args=(id, index, upload_client, frame_line))
         t.start()
         # 上传状态信息
-
         self.uploadStatus(id, filename, upload_status, index, frame_line, upload_client)
 
     # 进度条
@@ -274,13 +277,13 @@ class DriverUi():
         self.upload_queue.remove(self.upload_queue[id])
         self.uploadFilePage()
 
-    # 停止下载
+    # 停止上传
     def stopUploadResponse(self,id, filename,  upload_client, upload_status, index, frame_line):
         upload_status = False
         upload_client.setStopButton(True)
         self.uploadStatus(id, filename, upload_status, index, frame_line, upload_client)
 
-    # 开始下载
+    # 开始上传
     def startUploadResponse(self,id, filename, upload_client, upload_status, index, frame_line):
         upload_status = True
         upload_client.setStopButton(False)
@@ -374,7 +377,7 @@ class DriverUi():
     def showFileDownloadListPage(self):
         index = 0
         for item in self.download_queue:
-            filename = item[0][item[0].rfind(os.sep) + 1:]
+            filename = item[0]
             frame_line = Frame(self.frame3_2)
             frame_line.pack()
             # 下载文件需要远程获取文件大小
@@ -382,6 +385,26 @@ class DriverUi():
 
             self.showDownloadFileLine(filename, file_size, index, item[1], frame_line)
             index += 1
+
+        for item in self.wait_download_queue:
+            filename,save_path = item
+            frame_line = Frame(self.frame3_2)
+            frame_line.pack()
+            self.waitDownloadLine(frame_line, index, filename)
+            index += 1
+
+    def waitDownloadLine(self, frame_line, index, filename):
+        Label(frame_line,
+              text='文件',
+              ).grid(row=index, column=0, columnspan=2)
+        Label(frame_line,
+              text=filename,
+              ).grid(row=index, column=2, columnspan=8)
+        Label(frame_line,
+              text=' 等待下载 ',
+              ).grid(row=index, column=16, columnspan=2)
+
+
 
     # 下载的进度一栏
     def showDownloadFileLine(self, filename, file_size, index, download_client, frame_line):
@@ -425,22 +448,46 @@ class DriverUi():
             canvas.update()
             time.sleep(0.01)
             if process == 100:
-                self.cancelDownloadResponse(download_client, frame_line)
+                self.finishDownload(index, download_client, frame_line)
                 break
-    # 取消下载
-    def cancelDownloadResponse(self, download_client, frame_line):
-        download_client.setCancelButton(True)
+    def finishDownload(self, index, down_client, frame_line):
         frame_line.destroy()
-        self.download_queue.remove(self.download_queue[0])
+        self.download_queue.remove(self.download_queue[index])
+        if len(self.wait_download_queue) != 0:
+            filename,save_path = self.wait_download_queue.pop()
+
+            new_client = Local.Client.Client()
+            t = threading.Thread(target=new_client.download, args=(
+                filename, save_path))
+            t.start()
+            self.download_queue.append([filename, new_client])
+
         self.downloadFilePage()
 
-    # 停止下载
+    # 取消下载
+    def cancelDownloadResponse(self, index, download_client, frame_line):
+        download_client.setCancelButton(True)       # 同时删除文件
+        frame_line.destroy()
+        self.download_queue.remove(self.download_queue[index])
+
+        if len(self.wait_download_queue) != 0:
+            filename,save_path = self.wait_download_queue.pop()
+
+            new_client = Local.Client.Client()
+            t = threading.Thread(target=new_client.download, args=(
+                filename, save_path))
+            t.start()
+            self.download_queue.append([filename, new_client])
+
+        self.downloadFilePage()
+
+    # 暂停下载
     def stopDownloadResponse(self, download_client, download_status, index, frame_line):
         download_status = False
         download_client.setStopButton(True)
         self.downloadStatus(download_status, index, frame_line, download_client)
 
-        # 开始下载
+    # 开始下载
     def startDownloadResponse(self, download_client, download_status, index, frame_line):
         download_status = True
         download_client.setStopButton(False)
@@ -471,7 +518,7 @@ class DriverUi():
                    ).grid(row=index, column=18, columnspan=1)
 
         # 取消按钮
-        Button(frame_line, text='×', command=lambda: self.cancelDownloadResponse(download_client,frame_line)
+        Button(frame_line, text='×', command=lambda: self.cancelDownloadResponse(index, download_client,frame_line)
                ).grid(row=index, column=19, columnspan=1)
 
 
@@ -715,7 +762,7 @@ class DriverUi():
         menu_bar.delete(0, END)
 
         # 右键功能要有：下载，打开，删除，重命名，移动，属性
-        menu_bar.add_command(label='下载')
+        menu_bar.add_command(label='下载',command = lambda : self.downLoadDirResponse(event, dir_name))
         menu_bar.add_command(label='打开', command =lambda :self.openDir(event, dir_name))
         menu_bar.add_command(label='删除', command =lambda : self.deleteDirResponse(event, dir_name))
         menu_bar.add_command(label='重命名')
@@ -723,6 +770,42 @@ class DriverUi():
         menu_bar.add_command(label='属性')
 
         menu_bar.post(event.x_root, event.y_root)
+
+    # 下载文件夹
+    def downLoadDirResponse(self,event, dir_name):
+        # 先选择保存的文件夹
+        upload_ui = Local.UploadUi.SelectDir()
+        self.root.wait_window(upload_ui)
+        save_path = upload_ui.getDir()
+        self.downloadRecursion(dir_name, save_path)
+
+    def downloadRecursion(self, dir_name, save_path):
+        # 首先获取目录列表
+        download_client = Local.Client.Client()
+        dir_list = []
+        download_client.getFilesList(dir_name, dir_list)
+
+        for item in dir_list:
+
+            if item[0] == '0':
+                select_path = dir_name + '/' + item[1]
+                if len(self.download_queue) > self.MAX_LOAD:
+                    self.wait_download_queue.append((select_path, save_path))
+                else:
+                    print('我开启了一个线程')
+                    download_client = Local.Client.Client()
+                    t = threading.Thread(target=download_client.download, args=(
+                        select_path, save_path))
+                    t.start()
+                    self.download_queue.append([select_path, download_client])
+                    time.sleep(0.03)
+            else:
+                select_path = dir_name + '/' + item[1]
+                self.downloadRecursion(select_path, save_path)
+
+
+        pass
+
 
     # 删除文件夹
     def deleteDirResponse(self,event, delete_dir):
@@ -753,16 +836,18 @@ class DriverUi():
         upload_ui = Local.UploadUi.SelectDir()
         self.root.wait_window(upload_ui)
         save_path = upload_ui.getDir()
-        save_path = save_path + os.sep + filename
 
-        download_client = Local.Client.Client()
-        t = threading.Thread(target=download_client.downloadFile, args=(
-             filename, save_path))
-        t.start()
+        if len(self.download_queue) > self.MAX_LOAD:
+            self.wait_download_queue.append((filename, save_path))      # 追加到末尾
 
-        self.download_queue.append([save_path, download_client])
+        else:
+            download_client = Local.Client.Client()
+            t = threading.Thread(target=download_client.download, args=(
+                 filename, save_path))
+            t.start()
 
-        pass
+            self.download_queue.append([filename, download_client])
+
     # 删除文件
     def deleteFileResponse(self, event, delete_file):
         delete_file_client = Local.Client.Client()
@@ -807,11 +892,31 @@ class DriverUi():
 
     # 上传文件夹按钮
     def uploadDirResponse(self):
-        upload_ui = Local.UploadUi.UploadUi()
-        upload_dir_name = upload_ui.getDir()
+        upload_ui = Local.UploadUi.SelectDir()
+        self.root.wait_window(upload_ui)
+        upload_dir_path = upload_ui.getDir()
+        dir_name = upload_dir_path[upload_dir_path.rfind('/') + 1:]
+        up_path = self.now_path + os.sep + dir_name
+        self.uploadRecursion(up_path, upload_dir_path)
 
-        to_upload = Local.Upload.Upload()
-        to_upload.upload_dir(upload_dir_name)
+    def uploadRecursion(self,up_path, dir ):
+
+        object_list = os.listdir(dir)
+        for item in object_list:
+            path = dir + os.sep + item
+
+            if os.path.isdir(path):
+                up_path = up_path + os.path.sep + item
+                self.uploadRecursion(up_path, path)
+            else:
+                filename = item
+
+                upload_client = Local.Client.Client()
+                t = threading.Thread(target=upload_client.upload, args=(
+                    up_path, filename, path))
+                t.start()
+                # 然后开始上传
+                self.upload_queue.append([path, upload_client])
 
     # 上传文件按钮
     def uploadFileResponse(self):
