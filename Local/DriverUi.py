@@ -422,7 +422,6 @@ class DriverUi():
         t = threading.Thread(target=self.downloadProcessBar, args=(index, download_client, frame_line))
         t.start()
 
-
         # 下载状态信息
         self.downloadStatus(download_status, index, frame_line, download_client)
 
@@ -450,6 +449,7 @@ class DriverUi():
             if process == 100:
                 self.finishDownload(index, download_client, frame_line)
                 break
+
     def finishDownload(self, index, down_client, frame_line):
         frame_line.destroy()
         self.download_queue.remove(self.download_queue[index])
@@ -858,8 +858,6 @@ class DriverUi():
     def renameFile(self):
         pass
 
-
-
     def allStartTasks(self):
         pass
     def allStopTasks(self):
@@ -898,7 +896,6 @@ class DriverUi():
         dir_name = upload_dir_path[upload_dir_path.rfind('/') + 1:]
         up_path = self.now_path + os.sep + dir_name
         self.uploadRecursion(up_path, upload_dir_path)
-
     def uploadRecursion(self,up_path, dir ):
 
         object_list = os.listdir(dir)
@@ -910,7 +907,6 @@ class DriverUi():
                 self.uploadRecursion(up_path, path)
             else:
                 filename = item
-
                 upload_client = Local.Client.Client()
                 t = threading.Thread(target=upload_client.upload, args=(
                     up_path, filename, path))
@@ -1007,6 +1003,9 @@ class DriverUi():
             self.vsb1.destroy()
 
     def show(self):
+        life_client = Local.Client.Client()
+        t = threading.Thread(target=life_client.heartBeat, args=())
+        t.start()
         self.setWindow()
         self.chooseButton()  # 选择页面按钮
         self.showFileListPage()

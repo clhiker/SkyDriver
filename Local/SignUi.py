@@ -67,6 +67,7 @@ class SignUi():
         self.root.destroy()
         driver = DriverUi.DriverUi()
         driver.show()
+        print('关闭')
 
 
     # 注册按钮

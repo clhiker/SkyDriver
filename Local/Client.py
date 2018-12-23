@@ -156,9 +156,11 @@ class Client:
                 if not data:
                     break
                 else:
-                    with open(file_path, 'ab') as f:
-                        f.write(data)
-
+                    try:
+                        with open(file_path, 'ab') as f:
+                            f.write(data)
+                    except IOError as err:
+                        print("File Error:" + str(err))
 
             self.setLoadProcess(100)
             self.client_socket.close()
@@ -174,25 +176,29 @@ class Client:
         self.client_socket.send(filename.encode())
         time.sleep(0.2)
         total_line = 0
-        with open(file_path, 'rb') as f:
-            for line in f:
-                total_line += 1
-        f.close()
-        i = 0
-        with open(file_path, 'rb') as f:
-            for line in f:
-                # 暂停按钮
-                while self.stop_button:
-                    time.sleep(1)
-                # 取消按钮
-                if self.cancel_button:
-                    break
+        try:
+            with open(file_path, 'rb') as f:
+                for line in f:
+                    total_line += 1
+            f.close()
+            i = 0
+            with open(file_path, 'rb') as f:
+                for line in f:
+                    # 暂停按钮
+                    while self.stop_button:
+                        time.sleep(1)
+                        if self.cancel_button:
+                            break
+                    # 取消按钮
+                    if self.cancel_button:
+                        break
 
-                self.client_socket.send(line)
-                i += 1
-                count = round(i/total_line*100)
-                self.setLoadProcess(count)
-        f.close()
+                    self.client_socket.send(line)
+                    i += 1
+                    count = round(i/total_line*100)
+                    self.setLoadProcess(count)
+        except IOError as err:
+            print("File Error:" + str(err))
 
 
     def setLoadProcess(self, load_process):
@@ -254,6 +260,19 @@ class Client:
             return 'error'
         except socket.error:
             return 'error'
+    def heartBeat(self):
+        message = 'heart_beat'
+        self.client_socket.sendall(message.encode())
+        udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        config = configparser.ConfigParser()
+        config.read('local.ini')
+        ip = config.get('address', 'ip')
+        port = int(config.get('address', 'udp_port'))
+        address = (ip, port)
+        udp_socket.connect(address)
+        while True:
+            udp_socket.send('1'.encode())
+            time.sleep(0.3)
 
 
 if __name__ == '__main__':

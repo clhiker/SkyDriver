@@ -5,6 +5,7 @@ import time
 import configparser
 import threading
 import os
+import select
 
 
 class Server:
@@ -61,12 +62,14 @@ class Server:
         client.send('connect_ok'.encode())
         username = client.recv(1024).decode()
         password = client.recv(1024).decode()
-        with open('remote.txt', 'w') as f:
-            f.writelines(username)
-            f.write('\n')
-            f.writelines(password)
-            f.write('\n')
-        f.close()
+        try:
+            with open('remote.txt', 'w') as f:
+                f.writelines(username)
+                f.write('\n')
+                f.writelines(password)
+                f.write('\n')
+        except IOError as err:
+            print("File Error:" + str(err))
 
     # 上传选项
     # 接受数据线程
@@ -88,8 +91,11 @@ class Server:
             if not data:
                 break
             else:
-                with open(file_path, 'ab') as f:
-                    f.write(data)
+                try:
+                    with open(file_path, 'ab') as f:
+                        f.write(data)
+                except IOError as err:
+                    print("File Error:" + str(err))
 
         client.close()
         print('receive finished')
@@ -162,10 +168,12 @@ class Server:
 
         client.send(str(os.path.getsize(path)).encode())
         time.sleep(0.002)
-        with open(path, 'rb') as f:
-            for line in f:
-                client.send(line)
-        f.close()
+        try:
+            with open(path, 'rb') as f:
+                for line in f:
+                    client.send(line)
+        except IOError as err:
+            print("File Error:" + str(err))
 
     def sendFilesList(self,client):
         dir = client.recv(1024).decode()
@@ -183,7 +191,30 @@ class Server:
                 client.send('0'.encode())
                 client.send(item.encode())
 
-        pass
+    # 心跳包
+    def life(self, client):
+        udp_server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # 读取配置文件
+        config = configparser.ConfigParser()
+        config.read('config.ini')
+        ip = config.get('address', 'ip')
+        port = config.get('address', 'udp_port')
+        timeout = int(config.get('config', 'timeout'))
+        address = (ip, int(port))
+        # 绑定地址
+        udp_server_socket.bind(address)
+
+        udp_server_socket.setblocking(0)
+        while True:
+            ready = select.select([udp_server_socket], [], [], timeout)
+            if ready[0]:
+                # 接收结果
+                data = udp_server_socket.recv(1024)
+            else:
+                self.now_path = self.root_path
+                print('连接已重置')
+                break
+
 
     # 接收状态选项
     def receiveState(self, client, receive_info):
@@ -213,7 +244,9 @@ class Server:
             self.deleteFileServer(client)
         if receive_info == 'get_files_list':
             self.sendFilesList(client)
-
+        if receive_info == 'heart_beat':
+            print(receive_info)
+            self.life(client)
 
     def beginInterface(self):
         while True:
